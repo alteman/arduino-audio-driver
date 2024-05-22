@@ -8,7 +8,7 @@ error_t i2c_bus_write_bytes(i2c_bus_handle_t bus, int addr, uint8_t *reg,
                               int reglen, uint8_t *data, int datalen) {
   AD_LOGD(
       "i2c_bus_write_bytes: addr=0x%X reglen=%d datalen=%d - reg=0x%0X value=0x%0X",
-      addr, reglen, datalen, reg[0], data[0]);
+      addr, reglen, datalen, reg[0], datalen < 2 ? data[0] : ((data[0] << 8) + data[1]));
   TwoWire *p_wire = (TwoWire *)bus;
   assert(p_wire!=nullptr);
   //assert(reglen == 1);

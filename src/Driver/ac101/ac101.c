@@ -37,40 +37,58 @@ static uint16_t ac101_read_reg(uint8_t reg_addr)
 	return val;
 }
 
+void ac101_dump_regs(void) {
+  printf("AC101 reg dump:\n");
+  for (uint16_t i = 0; i <= 0xff; ++i) {
+	const char* div = " ";
+	int pp = i & 0xf;
+	if (pp == 15) {
+		div = "\n";
+	} else {
+		div = "   ";
+	}
+    printf("%04x%s", ac101_read_reg((uint8_t)i), div);
+  }
+}
+
+static uint8_t get_sr_val(samplerate_t sr) {
+
+	uint8_t sr_val = 0xff;
+	switch (sr)
+	{
+	case RATE_8K:
+		sr_val = 0;
+		break;
+	case RATE_11K:
+		sr_val = 1;
+		break;
+	case RATE_16K:
+		sr_val = 3;
+		break;
+	case RATE_22K:
+		sr_val = 4;
+		break;
+	case RATE_24K:
+		sr_val = 5;
+		break;
+	case RATE_32K:
+		sr_val = 6;
+		break;
+	case RATE_44K:
+		sr_val = 7;
+		break;
+	case RATE_48K:
+		sr_val = 8;
+		break;
+	default:
+		sr_val = 7; // 44100 Hz
+	}
+	return sr_val;
+}
 
 void set_codec_clk(samplerate_t sampledata)
 {
-	uint16_t sample_fre;
-	switch (sampledata)
-	{
-	case RATE_8K:
-		sample_fre = 8000;
-		break;
-	case RATE_11K:
-		sample_fre = 11025;
-		break;
-	case RATE_16K:
-		sample_fre = 16000;
-		break;
-	case RATE_22K:
-		sample_fre = 22050;
-		break;
-	case RATE_24K:
-		sample_fre = 24000;
-		break;
-	case RATE_32K:
-		sample_fre = 32000;
-		break;
-	case RATE_44K:
-		sample_fre = 44100;
-		break;
-	case RATE_48K:
-		sample_fre = 48000;
-		break;
-	default:
-		sample_fre = 44100;
-	}
-	ac101_write_reg(I2S_SR_CTRL, sample_fre);
+	ac101_write_reg(I2S_SR_CTRL,  get_sr_val(sampledata) << 12);
 }
 
 /// Determines the value for the SRC register based on the selected input_device
@@ -79,7 +97,7 @@ uint16_t get_src_value(input_device_t input_device){
 	switch(input_device){
 		// microphone
 		case ADC_INPUT_LINE1:
-			src_value = 0x2020;
+			src_value = 0x1040;
 			break;
 		// linein
 		case ADC_INPUT_LINE2:
@@ -92,7 +110,7 @@ uint16_t get_src_value(input_device_t input_device){
 		// both
 		case ADC_INPUT_ALL:
 		default:
-			src_value = 0x0408 | 0x2020;
+			src_value = 0x0408 | 0x1040;
 			break;
 	}
 	return src_value;
@@ -127,14 +145,15 @@ error_t ac101_init(codec_config_t *codec_cfg, i2c_bus_handle_t handle, int addr)
 	res |= ac101_write_reg(SYSCLK_CTRL, 0x8b08);
 	res |= ac101_write_reg(MOD_CLK_ENA, 0x800c);
 	res |= ac101_write_reg(MOD_RST_CTRL, 0x800c);
-	res |= ac101_write_reg(I2S_SR_CTRL, 0x7000); //sample rate
+	res |= ac101_write_reg(I2S_SR_CTRL, 0x0000); //sample rate
 	//AIF config
-	res |= ac101_write_reg(I2S1LCK_CTRL, 0x8850);	//BCLK/LRCK
-	res |= ac101_write_reg(I2S1_SDOUT_CTRL, 0xc000); //
+	//res |= ac101_write_reg(I2S1LCK_CTRL, 0x8850);	//BCLK/LRCK
+	res |= ac101_write_reg(I2S1LCK_CTRL, 0x8870);	// 24bit
+	res |= ac101_write_reg(I2S1_SDOUT_CTRL, 0x8000); // left only
 	res |= ac101_write_reg(I2S1_SDIN_CTRL, 0xc000);
 	res |= ac101_write_reg(I2S1_MXR_SRC, 0x2200); //
 
-	res |= ac101_write_reg(ADC_SRCBST_CTRL, 0xccc4);
+	res |= ac101_write_reg(ADC_SRCBST_CTRL, 0xffc4); // mic boost +48dB
 
 	res |= ac101_write_reg(ADC_SRC, get_src_value(codec_cfg->input_device));
 	res |= ac101_write_reg(ADC_DIG_CTRL, 0x8000);
@@ -147,7 +166,7 @@ error_t ac101_init(codec_config_t *codec_cfg, i2c_bus_handle_t handle, int addr)
 	res |= ac101_write_reg(OMIXER_DACA_CTRL, 0xf080); //}
 
 	//* Enable Speaker output
-	res |= ac101_write_reg(0x58, 0xeabd);
+	res |= ac101_write_reg(SPKOUT_CTRL, 0xeabd);
 
 	AD_LOGI("init done");
 	return res;
@@ -235,22 +254,22 @@ error_t AC101_start(ac_module_t mode)
 	error_t res = 0;
 	if (mode == AC_MODULE_LINE)
 	{
-		res |= ac101_write_reg(0x51, 0x0408);
-		res |= ac101_write_reg(0x40, 0x8000);
-		res |= ac101_write_reg(0x50, 0x3bc0);
+		res |= ac101_write_reg(ADC_SRC, 0x0408);
+		res |= ac101_write_reg(ADC_DIG_CTRL, 0x8000);
+		res |= ac101_write_reg(ADC_APC_CTRL, 0xbbc3);
 	}
 	if (mode == AC_MODULE_ADC || mode == AC_MODULE_ADC_DAC || mode == AC_MODULE_LINE)
 	{
 		//I2S1_SDOUT_CTRL
 		//res |= ac101_write_reg(PLL_CTRL2, 0x8120);
-		res |= ac101_write_reg(0x04, 0x800c);
-		res |= ac101_write_reg(0x05, 0x800c);
-		//res |= ac101_write_reg(0x06, 0x3000);
+		res |= ac101_write_reg(MOD_CLK_ENA, 0x808c);
+		res |= ac101_write_reg(MOD_RST_CTRL, 0x808c);		
+		//res |= ac101_write_reg(I2S_SR_CTRL, 0x3000);
 	}
 	if (mode == AC_MODULE_DAC || mode == AC_MODULE_ADC_DAC || mode == AC_MODULE_LINE)
 	{
 		//* Enable Headphoe output
-		res |= ac101_write_reg(OMIXER_DACA_CTRL, 0xff80);
+		res |= ac101_write_reg(OMIXER_DACA_CTRL, 0xf080);
 		res |= ac101_write_reg(HPOUT_CTRL, 0xc3c1);
 		res |= ac101_write_reg(HPOUT_CTRL, 0xcb00);
 		delay(100);
@@ -330,6 +349,7 @@ error_t ac101_config_i2s(codec_mode_t mode, I2SDefinition *iface)
 		bits = BIT_LENGTH_16_BITS;
 		break;
 	case BIT_LENGTH_24BITS:
+	case BIT_LENGTH_32BITS:
 		bits = BIT_LENGTH_24_BITS;
 		break;
 	default:
@@ -355,42 +375,16 @@ error_t ac101_config_i2s(codec_mode_t mode, I2SDefinition *iface)
 		break;
 	}
 
-	switch (iface->rate)
-	{
-	case RATE_8K:
-		sample_fre = 8000;
-		break;
-	case RATE_11K:
-		sample_fre = 11025;
-		break;
-	case RATE_16K:
-		sample_fre = 16000;
-		break;
-	case RATE_22K:
-		sample_fre = 22050;
-		break;
-	case RATE_24K:
-		sample_fre = 24000;
-		break;
-	case RATE_32K:
-		sample_fre = 32000;
-		break;
-	case RATE_44K:
-		sample_fre = 44100;
-		break;
-	case RATE_48K:
-		sample_fre = 48000;
-		break;
-	default:
-		sample_fre = 44100;
-	}
+	uint8_t lrdiv = (bits >= BIT_LENGTH_24_BITS) ? 2 : 1;
+	printf("ac101_config_i2s bits=%u, lrdiv=%u\n", bits, lrdiv);
 	regval = ac101_read_reg(I2S1LCK_CTRL);
-	regval &= 0xffc3;
+	regval &= 0xfe03;
 	regval |= (iface->mode << 15);
+	regval |= (lrdiv << 6);
 	regval |= (bits << 4);
 	regval |= (fmat << 2);
 	res |= ac101_write_reg(I2S1LCK_CTRL, regval);
-	res |= ac101_write_reg(I2S_SR_CTRL, sample_fre);
+	res |= ac101_write_reg(I2S_SR_CTRL, get_sr_val(iface->rate) << 12);
 	return res;
 }
 

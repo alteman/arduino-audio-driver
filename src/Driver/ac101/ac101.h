@@ -174,7 +174,7 @@ error_t ac101_config_i2s(codec_mode_t mode, I2SDefinition* iface);
 error_t ac101_set_voice_mute(bool enable);
 error_t ac101_set_voice_volume(int volume);
 error_t ac101_get_voice_volume(int* volume);
-
+void ac101_dump_regs(void);
 
 #ifdef __cplusplus
 }
